@@ -209,25 +209,29 @@ static int count_connections() {
 static bool scan_setup_filters() {
     bt_scan_filter_remove_all();
 
-    if (!CHK(bt_scan_filter_add(BT_SCAN_FILTER_TYPE_UUID, (struct bt_uuid*) &BT_UUID_HIDS_))) {
-        return false;
-    }
-
     int bonded_count = 0;
     bt_foreach_bond(BT_ID_DEFAULT, process_bond, &bonded_count);
 
     int conn_count = count_connections();
 
-    uint8_t filter_mode = BT_SCAN_UUID_FILTER;
+    uint8_t filter_mode;
 
     if (peers_only && (bonded_count > 0)) {
         if (conn_count == bonded_count) {
             LOG_DBG("all bonded peers connected, not scanning");
             return false;
         }
-        filter_mode |= BT_SCAN_ADDR_FILTER;
+        // Match bonded peers by address alone. Reconnect advertisements from
+        // bonded devices often omit the HID service UUID or use directed
+        // advertising (no AD payload), so requiring a UUID match here prevents
+        // bonded devices from reconnecting.
+        filter_mode = BT_SCAN_ADDR_FILTER;
         LOG_DBG("scanning for bonded peers only");
     } else {
+        if (!CHK(bt_scan_filter_add(BT_SCAN_FILTER_TYPE_UUID, (struct bt_uuid*) &BT_UUID_HIDS_))) {
+            return false;
+        }
+        filter_mode = BT_SCAN_UUID_FILTER;
         LOG_DBG("scanning for new peers");
         peers_only = false;
     }
@@ -278,7 +282,7 @@ static K_WORK_DEFINE(clear_bonds_work, clear_bonds_work_fn);
 static void scan_filter_match(struct bt_scan_device_info* device_info, struct bt_scan_filter_match* filter_match, bool connectable) {
     char addr[BT_ADDR_LE_STR_LEN];
 
-    if (!filter_match->uuid.match || (filter_match->uuid.count != 1)) {
+    if (!(filter_match->uuid.match && (filter_match->uuid.count == 1)) && !filter_match->addr.match) {
         LOG_WRN("%s invalid device connected", __func__);
         return;
     }
