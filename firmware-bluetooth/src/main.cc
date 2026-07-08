@@ -465,16 +465,9 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
     .security_changed = security_changed,
 };
 
-static struct bt_le_scan_param my_scan_param = {
-    .type = BT_LE_SCAN_TYPE_ACTIVE,
-    .options = BT_LE_SCAN_OPT_NONE,
-    .interval = 0x00A0,  // 100 ms
-    .window = 0x0020,    // 20 ms -> ~20% scan duty cycle
-};
-
 static void scan_init() {
     struct bt_scan_init_param scan_init = {
-        .scan_param = &my_scan_param,
+        .scan_param = NULL,
         .connect_if_match = 1,
         .conn_param = conn_param,
     };
