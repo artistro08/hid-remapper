@@ -229,6 +229,10 @@ static int count_connections() {
 static bool scan_setup_filters() {
     bt_scan_filter_remove_all();
 
+    if (!CHK(bt_scan_filter_add(BT_SCAN_FILTER_TYPE_UUID, (struct bt_uuid*) &BT_UUID_HIDS_))) {
+        return false;
+    }
+
     int bonded_count = 0;
     bt_foreach_bond(BT_ID_DEFAULT, process_bond, &bonded_count);
 
@@ -247,9 +251,6 @@ static bool scan_setup_filters() {
         filter_mode = BT_SCAN_ADDR_FILTER;
         LOG_DBG("scanning for bonded peers only");
     } else {
-        if (!CHK(bt_scan_filter_add(BT_SCAN_FILTER_TYPE_UUID, (struct bt_uuid*) &BT_UUID_HIDS_))) {
-            return false;
-        }
         filter_mode = BT_SCAN_UUID_FILTER;
         LOG_DBG("scanning for new peers");
         peers_only = false;
@@ -590,10 +591,10 @@ static void connected(struct bt_conn* conn, uint8_t conn_err) {
 
     bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
-    k_work_reschedule(&scan_start_work, K_MSEC(SCAN_DELAY_MS));
-
     if (conn_err) {
         LOG_ERR("Failed to connect to %s (conn_err=%u).", addr, conn_err);
+        k_work_reschedule(&scan_start_work, K_MSEC(SCAN_DELAY_MS));
+
         return;
     }
 
@@ -665,16 +666,9 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
     .security_changed = security_changed,
 };
 
-static struct bt_le_scan_param my_scan_param = {
-    .type = BT_LE_SCAN_TYPE_ACTIVE,
-    .options = BT_LE_SCAN_OPT_NONE,
-    .interval = 0x00A0,  /* 100 ms */
-    .window = 0x0020,    /* 20 ms -> ~20% scan duty cycle */
-};
-
 static void scan_init() {
     struct bt_scan_init_param scan_init = {
-        .scan_param = &my_scan_param,
+        .scan_param = NULL,
         .connect_if_match = 1,
         .conn_param = conn_param,
     };
@@ -700,6 +694,13 @@ static uint8_t hogp_notify_cb(struct bt_hogp* hogp, struct bt_hogp_rep_info* rep
 
     if (!data) {
         return BT_GATT_ITER_STOP;
+    }
+
+    if (scanning) {
+        scanning = false;  // more reports can come in before we actually stop scanning; there's probably a scenario where this causes trouble though
+        k_work_submit(&scan_stop_work);
+    } else {
+        k_work_reschedule(&scan_start_work, K_MSEC(SCAN_DELAY_MS));
     }
 
     static struct report_type buf;
