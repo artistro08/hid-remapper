@@ -3,6 +3,9 @@ on:
   push:
     paths:
       - 'firmware-bluetooth/**'
+      # The Bluetooth firmware is built from the shared remapper source too
+      - 'firmware/src/**'
+      - '.github/workflows/build-nrf.yml'
   workflow_call:
 defaults:
   run:
