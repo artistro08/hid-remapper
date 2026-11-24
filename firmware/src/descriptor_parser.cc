@@ -103,9 +103,6 @@ static void add_synthetic_dpad_usages(std::unordered_map<uint8_t, std::unordered
     }
 }
 
-// Some keyboards and macro pads declare keys only up to 0x65, but still send
-// F13-F24 and other higher keys in the same array. Accept anything the array
-// field can hold, up to 0xFF, so those keys aren't silently dropped.
 static void extend_keyboard_arrays(std::unordered_map<uint8_t, std::unordered_map<uint32_t, usage_def_t>>& usage_maps) {
     for (auto& [report_id, usage_map] : usage_maps) {
         for (auto& [usage, usage_def] : usage_map) {
