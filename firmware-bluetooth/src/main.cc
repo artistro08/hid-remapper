@@ -34,6 +34,9 @@ LOG_MODULE_REGISTER(remapper, LOG_LEVEL_DBG);
 #define CHK(X) ({ int err = X; if (err != 0) { LOG_ERR("%s returned %d (%s:%d)", #X, err, __FILE__, __LINE__); } err == 0; })
 
 static const int SCAN_DELAY_MS = 1000;
+// When a device drops (or we just booted) nothing is being set up, so there's
+// no reason to wait the full SCAN_DELAY_MS before looking for bonded peers.
+static const int RECONNECT_SCAN_DELAY_MS = 200;
 static const int CLEAR_BONDS_BUTTON_PRESS_MS = 3000;
 
 // these macros don't work in C++ when used directly ("taking address of temporary array")
@@ -44,6 +47,10 @@ static auto const BT_UUID_DIS_ = (struct bt_uuid_16) BT_UUID_INIT_16(BT_UUID_DIS
 static auto const BT_UUID_DIS_PNP_ID_ = (struct bt_uuid_16) BT_UUID_INIT_16(BT_UUID_DIS_PNP_ID_VAL);
 static auto BT_ADDR_LE_ANY_ = BT_ADDR_LE_ANY[0];
 static auto BT_CONN_LE_CREATE_CONN_ = BT_CONN_LE_CREATE_CONN[0];
+// The default scan parameters only listen half the time (30 ms out of every
+// 60 ms), so we'd miss half of a reconnecting device's advertisements. We only
+// scan when no reports are coming in, so we can afford to listen all the time.
+static auto BT_LE_SCAN_PASSIVE_CONTINUOUS_ = BT_LE_SCAN_PASSIVE_CONTINUOUS[0];
 
 static struct bt_hogp hogps[CONFIG_BT_MAX_CONN];
 static bool discovery_started[CONFIG_BT_MAX_CONN];
@@ -593,7 +600,7 @@ static void connected(struct bt_conn* conn, uint8_t conn_err) {
 
     if (conn_err) {
         LOG_ERR("Failed to connect to %s (conn_err=%u).", addr, conn_err);
-        k_work_reschedule(&scan_start_work, K_MSEC(SCAN_DELAY_MS));
+        k_work_reschedule(&scan_start_work, K_MSEC(RECONNECT_SCAN_DELAY_MS));
 
         return;
     }
@@ -623,7 +630,7 @@ static void disconnected(struct bt_conn* conn, uint8_t reason) {
 
     count_connections();
 
-    k_work_reschedule(&scan_start_work, K_MSEC(SCAN_DELAY_MS));
+    k_work_reschedule(&scan_start_work, K_MSEC(RECONNECT_SCAN_DELAY_MS));
 }
 
 static void security_changed(struct bt_conn* conn, bt_security_t level, enum bt_security_err err) {
@@ -668,7 +675,7 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
 
 static void scan_init() {
     struct bt_scan_init_param scan_init = {
-        .scan_param = NULL,
+        .scan_param = &BT_LE_SCAN_PASSIVE_CONTINUOUS_,  // bt_scan_start() overrides the type
         .connect_if_match = 1,
         .conn_param = conn_param,
     };
@@ -1211,7 +1218,7 @@ int main() {
     parse_our_descriptor();
     set_mapping_from_config();
 
-    k_work_reschedule(&scan_start_work, K_MSEC(SCAN_DELAY_MS));
+    k_work_reschedule(&scan_start_work, K_MSEC(RECONNECT_SCAN_DELAY_MS));
 
     struct report_type incoming_report;
     struct descriptor_type incoming_descriptor;
